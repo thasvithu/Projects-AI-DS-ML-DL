@@ -1,0 +1,12 @@
+# ---- UI Framework ----
+streamlit              # Simple web app frontend to upload resumes and display results
+
+# ---- Google Gemini API ----
+google-generativeai     # Official Gemini Pro SDK for text and vision models (Pro Vision)
+
+# ---- Environment Variables ----
+python-dotenv           # Load your API keys (like Google API) securely from .env file
+
+# ---- PDF to Image Conversion ----
+pdf2image              # Convert PDF resume pages to images for Gemini Vision input
+Pillow                 # Required for image processing (used by pdf2image)
