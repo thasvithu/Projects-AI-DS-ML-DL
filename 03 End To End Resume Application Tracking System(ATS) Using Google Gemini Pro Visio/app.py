@@ -1,8 +1,6 @@
-# --- Environment Setup ---
 from dotenv import load_dotenv
 load_dotenv()
 
-# --- Imports ---
 import streamlit as st
 import os
 import io
@@ -11,108 +9,127 @@ from PIL import Image
 import pdf2image
 import google.generativeai as genai
 
-# --- Configure Gemini ---
+# Set up the Gemini API
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
-# --- Gemini Response Generator ---
-def get_gemini_response(job_description, resume_parts, prompt):
+# Function to send inputs to Gemini and get the response
+def analyze_resume_with_gemini(job_desc, resume_images, prompt_text):
     try:
         model = genai.GenerativeModel("gemini-1.5-flash")
-        response = model.generate_content([job_description, *resume_parts, prompt])
+        response = model.generate_content([job_desc, *resume_images, prompt_text])
         return response.text
-    except Exception as e:
-        return f"❌ Gemini Error: {str(e)}"
+    except Exception as error:
+        return f"Gemini API error: {str(error)}"
 
-# --- PDF to Image Conversion (Multi-page support) ---
-def convert_pdf_to_images(uploaded_file):
+# Convert PDF pages to images and prepare them for Gemini input
+def process_pdf(uploaded_pdf):
     try:
-        images = pdf2image.convert_from_bytes(uploaded_file.read())
-        img_bytes_list = []
-        for page in images:
-            img_io = io.BytesIO()
-            page.save(img_io, format='JPEG')
-            img_data = base64.b64encode(img_io.getvalue()).decode()
-            img_bytes_list.append({
+        # Convert entire PDF to list of PIL images
+        pages = pdf2image.convert_from_bytes(uploaded_pdf.read())
+
+        image_parts = []
+        for page in pages:
+            buffer = io.BytesIO()
+            page.save(buffer, format='JPEG')
+            img_bytes = buffer.getvalue()
+            encoded = base64.b64encode(img_bytes).decode()
+
+            image_parts.append({
                 "mime_type": "image/jpeg",
-                "data": img_data
+                "data": encoded
             })
-        return img_bytes_list, images[0]  # Return all pages + preview of first page
+
+        # Return image parts + first page for preview
+        return image_parts, pages[0]
     except Exception as e:
-        st.error(f"⚠️ Error converting PDF: {e}")
+        st.error(f"Error reading PDF: {e}")
         return None, None
 
-# --- Prompts ---
-HR_EVALUATION_PROMPT = """
-You are an experienced HR with deep technical knowledge in roles such as Data Scientist, Full Stack Developer,
-Big Data Engineer, DevOps Engineer, or Data Analyst. Evaluate the following resume against the provided job description.
-Provide a summary of strengths, weaknesses, and role alignment.
+# Prompts for HR and ATS perspective
+HR_PROMPT = """
+You're acting as an experienced HR specialist with strong technical awareness.
+Evaluate this resume against the job description: highlight where the candidate fits well,
+where they fall short, and any key observations.
 """
 
-ATS_MATCH_PROMPT = """
-You are a skilled ATS system trained to evaluate resumes. Analyze this resume against the job description.
+ATS_PROMPT = """
+You're simulating an ATS (Applicant Tracking System) and evaluating the resume against the job description.
 Provide:
 1. A percentage match
-2. Missing keywords/skills
-3. Final recommendations
+2. Any important keywords missing
+3. Final summary thoughts
 """
 
-# --- Streamlit UI ---
-st.set_page_config(page_title="AI-Powered ATS Resume Analyzer", layout="wide")
-st.title("📄 AI-Powered ATS Resume Analyzer")
-st.markdown("Use Google Gemini to analyze your resume against any job description.")
+# --- Streamlit app starts here ---
 
-# --- Sidebar Help ---
+st.set_page_config(page_title="ATS Resume Analyzer", layout="wide")
+
+st.title("📄 Resume ATS Analyzer")
+st.write("This tool helps you evaluate how well your resume matches a job description using Gemini AI.")
+
+# Sidebar help
 with st.sidebar:
-    st.header("📌 Instructions")
+    st.subheader("How to Use")
     st.markdown("""
-    1. Paste the **job description**.
-    2. Upload your **resume (PDF)**.
-    3. Click **analyze** to get a Gemini-powered evaluation.
-    4. Optionally download results as a `.txt` report.
+    1. Paste the job description  
+    2. Upload your resume (PDF)  
+    3. Click a button to get the analysis  
+    4. Download the result if you like
     """)
-    st.markdown("---")
-    st.caption("💡 Developed by **Vithusan.V**")
+    st.caption("Built with ❤️ by Vithusan.V")
 
-# --- Inputs ---
-input_text = st.text_area("📝 Paste Job Description Here", height=200)
-uploaded_file = st.file_uploader("📎 Upload Resume (PDF Only)", type=["pdf"])
+# Job description input
+job_description = st.text_area("Job Description", height=200)
 
-if uploaded_file:
-    st.success("✅ Resume uploaded!")
-    resume_parts, preview_image = convert_pdf_to_images(uploaded_file)
+# Upload resume
+uploaded_resume = st.file_uploader("Upload your resume as PDF", type=["pdf"])
 
-    if preview_image:
-        st.image(preview_image, caption="📄 First Page Preview", use_container_width=True)
+resume_ready = False
+resume_images = None
+first_page_preview = None
 
-# --- Buttons ---
+if uploaded_resume:
+    st.success("Resume uploaded!")
+    resume_images, first_page_preview = process_pdf(uploaded_resume)
+    if resume_images:
+        resume_ready = True
+        st.image(first_page_preview, caption="First page of your resume", use_container_width=True)
+
+# Buttons for analysis
 col1, col2 = st.columns(2)
 with col1:
-    submit_hr = st.button("🔍 HR Perspective")
+    do_hr_eval = st.button("🔍 HR Review")
 with col2:
-    submit_ats = st.button("📊 ATS Match Score")
+    do_ats_eval = st.button("📊 ATS Match Score")
 
-# --- Evaluation Logic ---
-if (submit_hr or submit_ats) and not input_text:
-    st.error("⚠️ Please enter a job description.")
+# Perform analysis if triggered
+if (do_hr_eval or do_ats_eval) and not job_description:
+    st.warning("Please enter a job description before analyzing.")
 
-if (submit_hr or submit_ats) and not uploaded_file:
-    st.error("⚠️ Please upload a PDF resume.")
+elif (do_hr_eval or do_ats_eval) and not resume_ready:
+    st.warning("Please upload a resume PDF.")
 
-if (submit_hr or submit_ats) and uploaded_file and input_text:
-    with st.spinner("🔎 Analyzing with Gemini..."):
-        selected_prompt = HR_EVALUATION_PROMPT if submit_hr else ATS_MATCH_PROMPT
-        result = get_gemini_response(input_text, resume_parts, selected_prompt)
-        st.subheader("📬 Gemini Evaluation")
-        st.write(result)
+elif (do_hr_eval or do_ats_eval):
+    with st.spinner("Running analysis..."):
+        selected_prompt = HR_PROMPT if do_hr_eval else ATS_PROMPT
+        output = analyze_resume_with_gemini(job_description, resume_images, selected_prompt)
 
-        # --- Download Option ---
+        st.subheader("🧠 Analysis Result")
+        st.write(output)
+
         st.download_button(
-            label="📥 Download Analysis as TXT",
-            data=result,
-            file_name="resume_analysis.txt",
+            label="📥 Download Result",
+            data=output,
+            file_name="ats_resume_analysis.txt",
             mime="text/plain"
         )
 
-# --- Footer ---
+# Footer at bottom
 st.markdown("---")
-st.markdown("✅ **Developed by [Vithusan.V](github.com/thasvithu)**")
+st.markdown(
+    '<div style="text-align:center; font-size:14px;">'
+    '✅ Developed by <a href="https://github.com/thasvithu" target="_blank">Vithusan.V</a> | '
+    '<a href="https://linkedin.com/in/thasvithu" target="_blank">LinkedIn</a>'
+    '</div>',
+    unsafe_allow_html=True
+)

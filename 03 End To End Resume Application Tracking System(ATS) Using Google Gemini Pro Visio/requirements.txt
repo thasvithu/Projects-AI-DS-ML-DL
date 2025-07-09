@@ -9,5 +9,4 @@ python-dotenv           # Load your API keys (like Google API) securely from .en
 
 # ---- PDF to Image Conversion ----
 pdf2image              # Convert PDF resume pages to images for Gemini Vision input
-
-
+Pillow                 # Required for image processing (used by pdf2image)
